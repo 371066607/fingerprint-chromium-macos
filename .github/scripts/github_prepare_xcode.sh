@@ -4,6 +4,10 @@ set -euo pipefail
 shopt -s extglob
 
 BASE_XCODE_PATH=/Applications/Xcode_26.0.app
+if [ ! -e "$BASE_XCODE_PATH" ]; then
+  # Runner images rotate Xcode point releases; take the oldest Xcode 26 present.
+  BASE_XCODE_PATH="$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | head -n 1 || true)"
+fi
 
 if [ ! -e "$BASE_XCODE_PATH" ]; then
   echo "Failed to find a suitable version of Xcode"
