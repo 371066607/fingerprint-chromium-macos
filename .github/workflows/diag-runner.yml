@@ -39,12 +39,12 @@ jobs:
         run: |
           cd probe
           /usr/bin/time -l clang++ -std=c++17 -O2 -c tu0.cc -o tu0.o 2> single.txt; echo "exit=$?"
-          rg "real|maximum resident" single.txt || cat single.txt
+          grep -E "real|maximum resident" single.txt || cat single.txt
 
       - name: Five parallel compiles, sampling swap and free memory
         run: |
           cd probe
-          ( while true; do echo "$(date +%T) $(sysctl -n vm.swapusage) | $(vm_stat | rg 'Pages free|Pages active|Pages occupied by compressor' | tr -s ' ' | tr '\n' ' ')"; sleep 10; done ) > sample.txt &
+          ( while true; do echo "$(date +%T) $(sysctl -n vm.swapusage) | $(vm_stat | grep -E "Pages free|Pages active|Pages occupied by compressor" | tr -s " " | tr "\n" " ")"; sleep 10; done ) > sample.txt &
           SAMPLER=$!
           start=$(date +%s)
           for i in 0 1 2 3 4; do
@@ -53,7 +53,7 @@ jobs:
           wait
           echo "wall_seconds=$(( $(date +%s) - start ))"
           kill $SAMPLER || true
-          for i in 0 1 2 3 4; do echo "--- tu$i"; rg "real|maximum resident|exit=" par$i.txt; done
+          for i in 0 1 2 3 4; do echo "--- tu$i"; grep -E "real|maximum resident|exit=" par$i.txt; done
           echo "--- memory samples"; cat sample.txt
 
       - name: Swap after the probe
