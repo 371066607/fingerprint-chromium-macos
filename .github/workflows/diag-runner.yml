@@ -1,0 +1,61 @@
+name: Diagnose macOS runner memory and compile throughput
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    name: Runner memory and parallel compile probe
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Runner specs
+        run: |
+          echo "arch: $(uname -m)"
+          echo "ncpu: $(sysctl -n hw.ncpu)"
+          echo "memsize_GiB: $(( $(sysctl -n hw.memsize) / 1073741824 ))"
+          sysctl vm.swapusage
+          vm_stat | head -6
+          df -h /
+          clang++ --version | head -1
+
+      - name: Generate template-heavy translation units
+        run: |
+          mkdir -p probe && cd probe
+          python3 - <<'PY'
+          import random
+          for i in range(8):
+              lines = ["#include <vector>", "#include <map>", "#include <string>", "#include <functional>"]
+              lines.append(f"namespace probe{i} {{")
+              for k in range(400):
+                  lines.append(f"template <typename T{k}> struct S{k} {{ std::map<std::string, std::vector<T{k}>> m; std::function<T{k}(T{k})> f; T{k} get(T{k} x) {{ return f ? f(x) : x; }} }};")
+                  lines.append(f"inline int use{k}() {{ S{k}<int> s; S{k}<double> d; return (int)s.get(1) + (int)d.get(2.0); }}")
+              lines.append("}")
+              open(f"tu{i}.cc", "w").write("\n".join(lines) + "\n")
+          PY
+          ls -la
+
+      - name: Single compile, timed with peak RSS
+        run: |
+          cd probe
+          /usr/bin/time -l clang++ -std=c++17 -O2 -c tu0.cc -o tu0.o 2> single.txt; echo "exit=$?"
+          rg "real|maximum resident" single.txt || cat single.txt
+
+      - name: Five parallel compiles, sampling swap and free memory
+        run: |
+          cd probe
+          ( while true; do echo "$(date +%T) $(sysctl -n vm.swapusage) | $(vm_stat | rg 'Pages free|Pages active|Pages occupied by compressor' | tr -s ' ' | tr '\n' ' ')"; sleep 10; done ) > sample.txt &
+          SAMPLER=$!
+          start=$(date +%s)
+          for i in 0 1 2 3 4; do
+            ( /usr/bin/time -l clang++ -std=c++17 -O2 -c tu$i.cc -o par$i.o 2> par$i.txt; echo "exit=$?" >> par$i.txt ) &
+          done
+          wait
+          echo "wall_seconds=$(( $(date +%s) - start ))"
+          kill $SAMPLER || true
+          for i in 0 1 2 3 4; do echo "--- tu$i"; rg "real|maximum resident|exit=" par$i.txt; done
+          echo "--- memory samples"; cat sample.txt
+
+      - name: Swap after the probe
+        if: always()
+        run: sysctl vm.swapusage
