@@ -27,7 +27,7 @@ jobs:
           for i in range(8):
               lines = ["#include <vector>", "#include <map>", "#include <string>", "#include <functional>"]
               lines.append(f"namespace probe{i} {{")
-              for k in range(4000):
+              for k in range(20000):
                   lines.append(f"template <typename T{k}> struct S{k} {{ std::map<std::string, std::vector<T{k}>> m; std::function<T{k}(T{k})> f; T{k} get(T{k} x) {{ return f ? f(x) : x; }} }};")
                   lines.append(f"inline int use{k}() {{ S{k}<int> s; S{k}<double> d; return (int)s.get(1) + (int)d.get(2.0); }}")
               lines.append("}")
@@ -49,7 +49,7 @@ jobs:
           start=$(date +%s)
           PIDS=""
           for i in 0 1 2 3 4; do
-            ( timeout 1200 /usr/bin/time -l clang++ -std=c++17 -O2 -c tu$i.cc -o par$i.o 2> par$i.txt; echo "exit=$?" >> par$i.txt ) &
+            ( /usr/bin/time -l clang++ -std=c++17 -O2 -c tu$i.cc -o par$i.o 2> par$i.txt; echo "exit=$?" >> par$i.txt ) &
             PIDS="$PIDS $!"
           done
           for pid in $PIDS; do wait $pid; done
